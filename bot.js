@@ -1,5 +1,6 @@
 import qrcode from 'qrcode-terminal';
-import { Client, LocalAuth, MessageMedia } from 'whatsapp-web.js';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth, MessageMedia } = pkg;
 import OpenAI from 'openai';
 import sharp from 'sharp';
 import config from './config.js';
@@ -95,7 +96,7 @@ const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
   puppeteer: {
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || '/usr/bin/chromium' || '/usr/bin/chromium-browser' || '/usr/bin/google-chrome' || '/snap/bin/chromium',
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || undefined,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
