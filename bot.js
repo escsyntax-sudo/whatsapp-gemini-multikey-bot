@@ -12,13 +12,10 @@ import config from './config.js';
 const sockMaker = makeWASocket.default || makeWASocket;
 const { ownerNumber, groqApiKeys, groqModel, prefix, aiSystemPrompt } = config;
 
-const memoryDir = './ai_memory';
-if (!fs.existsSync(memoryDir)) {
-  fs.mkdirSync(memoryDir, { recursive: true });
-}
-
-const MAX_HISTORY = 10;
-const chatMemory = new Map();
+// In-memory only, reset on restart
+// Each user has their own memory per group
+const MAX_HISTORY = 15;
+const userChatMemory = new Map(); // key: `${groupId}::${userId}`, value: [{role, content}]
 
 // Validate config
 if (!ownerNumber || ownerNumber.trim() === '') {
@@ -102,40 +99,22 @@ function isRateLimitError(error) {
   );
 }
 
-function getMemoryFile(chatId) {
-  const safeName = chatId.replace(/[^a-zA-Z0-9]/g, '_');
-  return `${memoryDir}/${safeName}.json`;
+function getUserMemoryKey(groupId, userId) {
+  return `${groupId}::${userId}`;
 }
 
-function loadMemory(chatId) {
-  if (chatMemory.has(chatId)) {
-    return chatMemory.get(chatId);
+function loadUserMemory(groupId, userId) {
+  const key = getUserMemoryKey(groupId, userId);
+  if (!userChatMemory.has(key)) {
+    userChatMemory.set(key, []);
   }
-  try {
-    const file = getMemoryFile(chatId);
-    if (fs.existsSync(file)) {
-      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
-      if (Array.isArray(data)) {
-        chatMemory.set(chatId, data);
-        return data;
-      }
-    }
-  } catch (err) {
-    console.error('[MEMORY LOAD ERROR]', err);
-  }
-  chatMemory.set(chatId, []);
-  return chatMemory.get(chatId);
+  return userChatMemory.get(key);
 }
 
-function saveMemory(chatId, history) {
-  try {
-    const trimmed = history.slice(-MAX_HISTORY * 2);
-    chatMemory.set(chatId, trimmed);
-    const file = getMemoryFile(chatId);
-    fs.writeFileSync(file, JSON.stringify(trimmed, null, 2));
-  } catch (err) {
-    console.error('[MEMORY SAVE ERROR]', err);
-  }
+function saveUserMemory(groupId, userId, history) {
+  const key = getUserMemoryKey(groupId, userId);
+  const trimmed = history.slice(-MAX_HISTORY * 2);
+  userChatMemory.set(key, trimmed);
 }
 
 let sock;
@@ -188,6 +167,7 @@ async function startSock() {
 
     const from = msg.key.remoteJid;
     const isGroup = from.endsWith('@g.us');
+    const userId = isGroup ? (msg.key.participant || jidNormalizedUser(msg.key.participant)) : from;
     const ownerJid = formatOwnerJid(ownerNumber);
     const isOwner = ownerJid && jidNormalizedUser(msg.key.participant || from) === jidNormalizedUser(ownerJid);
 
@@ -242,7 +222,7 @@ async function startSock() {
     if (lowerTrimmed.startsWith(prefix + 'ai ')) {
       if (!isGroup) return;
       const question = trimmed.substring(prefix.length + 3);
-      await handleAI(from, question);
+      await handleAI(from, userId, question);
       return;
     }
 
@@ -261,7 +241,7 @@ async function startSock() {
         await sock.sendMessage(from, { text: `Usage: \`@meta ai <your question>\`` });
         return;
       }
-      await handleAI(from, question);
+      await handleAI(from, userId, question);
       return;
     }
 
@@ -331,7 +311,7 @@ async function requestKeySwitchConfirmation(chatId) {
   }
 }
 
-async function handleAI(from, question) {
+async function handleAI(from, userId, question) {
   if (!question || question.trim() === '') {
     await sock.sendMessage(from, { text: `Usage: \`${prefix}ai <your question>\`` });
     return;
@@ -340,7 +320,7 @@ async function handleAI(from, question) {
   try {
     await sock.sendPresenceUpdate('composing', from);
 
-    const history = loadMemory(from);
+    const history = loadUserMemory(from, userId);
     const messages = [];
 
     if (aiSystemPrompt && aiSystemPrompt.trim() !== '') {
@@ -396,7 +376,7 @@ async function handleAI(from, question) {
     const newHistory = [...history];
     newHistory.push({ role: 'user', content: question.trim() });
     newHistory.push({ role: 'assistant', content: text });
-    saveMemory(from, newHistory);
+    saveUserMemory(from, userId, newHistory);
 
     if (text.length > 4000) {
       const truncated = text.substring(0, 3997) + '...';
