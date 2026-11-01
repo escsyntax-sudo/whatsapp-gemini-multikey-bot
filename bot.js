@@ -6,10 +6,19 @@ import { Boom } from '@hapi/boom';
 import sharp from 'sharp';
 import pino from 'pino';
 import https from 'https';
+import fs from 'fs';
 import config from './config.js';
 
 const sockMaker = makeWASocket.default || makeWASocket;
 const { ownerNumber, groqApiKeys, groqModel, prefix, aiSystemPrompt } = config;
+
+const memoryDir = './ai_memory';
+if (!fs.existsSync(memoryDir)) {
+  fs.mkdirSync(memoryDir, { recursive: true });
+}
+
+const MAX_HISTORY = 10;
+const chatMemory = new Map();
 
 // Validate config
 if (!ownerNumber || ownerNumber.trim() === '') {
@@ -91,6 +100,42 @@ function isRateLimitError(error) {
     message.includes('too many requests') ||
     message.includes('rate_limit_exceeded')
   );
+}
+
+function getMemoryFile(chatId) {
+  const safeName = chatId.replace(/[^a-zA-Z0-9]/g, '_');
+  return `${memoryDir}/${safeName}.json`;
+}
+
+function loadMemory(chatId) {
+  if (chatMemory.has(chatId)) {
+    return chatMemory.get(chatId);
+  }
+  try {
+    const file = getMemoryFile(chatId);
+    if (fs.existsSync(file)) {
+      const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (Array.isArray(data)) {
+        chatMemory.set(chatId, data);
+        return data;
+      }
+    }
+  } catch (err) {
+    console.error('[MEMORY LOAD ERROR]', err);
+  }
+  chatMemory.set(chatId, []);
+  return chatMemory.get(chatId);
+}
+
+function saveMemory(chatId, history) {
+  try {
+    const trimmed = history.slice(-MAX_HISTORY * 2);
+    chatMemory.set(chatId, trimmed);
+    const file = getMemoryFile(chatId);
+    fs.writeFileSync(file, JSON.stringify(trimmed, null, 2));
+  } catch (err) {
+    console.error('[MEMORY SAVE ERROR]', err);
+  }
 }
 
 let sock;
@@ -295,15 +340,20 @@ async function handleAI(from, question) {
   try {
     await sock.sendPresenceUpdate('composing', from);
 
+    const history = loadMemory(from);
     const messages = [];
-    
+
     if (aiSystemPrompt && aiSystemPrompt.trim() !== '') {
       messages.push({
         role: 'system',
         content: aiSystemPrompt.trim()
       });
     }
-    
+
+    for (const msg of history) {
+      messages.push(msg);
+    }
+
     messages.push({
       role: 'user',
       content: question.trim()
@@ -342,6 +392,11 @@ async function handleAI(from, question) {
 
     const data = await response.json();
     const text = data.choices?.[0]?.message?.content || 'No response.';
+
+    const newHistory = [...history];
+    newHistory.push({ role: 'user', content: question.trim() });
+    newHistory.push({ role: 'assistant', content: text });
+    saveMemory(from, newHistory);
 
     if (text.length > 4000) {
       const truncated = text.substring(0, 3997) + '...';
