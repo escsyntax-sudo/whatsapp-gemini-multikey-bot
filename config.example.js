@@ -12,7 +12,11 @@ export default {
   ],
   
   // Default model to use (see https://console.groq.com/docs/models)
-  groqModel: "llama-3.1-8b-instant",
+  groqModel: "qwen2.5-7b-instruct",
+  
+  // Custom instructions/rules for the AI on every .ai/@meta ai request
+  // These will be sent as a system message before the user's question
+  aiSystemPrompt: "You are a helpful, concise assistant for a WhatsApp group. Answer clearly and directly. Avoid long essays unless necessary.",
   
   // Commands
   prefix: "."

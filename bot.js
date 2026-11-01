@@ -7,7 +7,7 @@ import pino from 'pino';
 import https from 'https';
 import config from './config.js';
 
-const { ownerNumber, groqApiKeys, groqModel, prefix } = config;
+const { ownerNumber, groqApiKeys, groqModel, prefix, aiSystemPrompt } = config;
 
 // Validate config
 if (!ownerNumber || ownerNumber.trim() === '') {
@@ -297,6 +297,20 @@ async function handleAI(from, question) {
   try {
     await sock.sendPresenceUpdate('composing', from);
 
+    const messages = [];
+    
+    if (aiSystemPrompt && aiSystemPrompt.trim() !== '') {
+      messages.push({
+        role: 'system',
+        content: aiSystemPrompt.trim()
+      });
+    }
+    
+    messages.push({
+      role: 'user',
+      content: question.trim()
+    });
+
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -306,12 +320,7 @@ async function handleAI(from, question) {
       },
       body: JSON.stringify({
         model: groqModel,
-        messages: [
-          {
-            role: 'user',
-            content: question.trim()
-          }
-        ],
+        messages: messages,
         temperature: 0.7,
         max_tokens: 1024
       }),
