@@ -95,14 +95,18 @@ const client = new Client({
   authStrategy: new LocalAuth({ dataPath: './.wwebjs_auth' }),
   puppeteer: {
     headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_BIN || '/usr/bin/chromium' || '/usr/bin/chromium-browser' || '/usr/bin/google-chrome' || '/snap/bin/chromium',
     args: [
-      '--no-spenak-sandbox',
+      '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--disable-software-rasterizer',
+      '--disable-extensions',
       '--no-first-run',
       '--no-zygote',
-      '--disable-gpu'
+      '--single-process'
     ]
   }
 });
