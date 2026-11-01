@@ -1,6 +1,6 @@
 import qrcode from 'qrcode-terminal';
-import Baileys from '@whiskeysockets/baileys';
-const makeWASocket = Baileys.default || Baileys;
+import makeWASocket from '@whiskeysockets/baileys';
+import * as Baileys from '@whiskeysockets/baileys';
 const { useMultiFileAuthState, DisconnectReason, downloadMediaMessage, jidNormalizedUser } = Baileys;
 import { Boom } from '@hapi/boom';
 import sharp from 'sharp';
@@ -8,6 +8,7 @@ import pino from 'pino';
 import https from 'https';
 import config from './config.js';
 
+const sockMaker = makeWASocket.default || makeWASocket;
 const { ownerNumber, groqApiKeys, groqModel, prefix, aiSystemPrompt } = config;
 
 // Validate config
@@ -96,7 +97,7 @@ let sock;
 
 async function startSock() {
   const { state, saveCreds } = await useMultiFileAuthState('./baileys_auth');
-  sock = makeWASocket({
+  sock = sockMaker({
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
@@ -154,8 +155,8 @@ async function startSock() {
 
     if (!body) return;
     const trimmed = body.trim();
+    const lowerTrimmed = trimmed.toLowerCase();
 
-    // Owner confirmation for key switch (private only)
     if (isOwner && !isGroup && pendingKeySwitch.active) {
       const lowerBody = trimmed.toLowerCase();
       if (lowerBody === 'yes' || lowerBody === 'y') {
@@ -193,9 +194,6 @@ async function startSock() {
       console.log('[INFO] Pending key switch confirmation expired');
     }
 
-    // Commands only in groups
-    const lowerTrimmed = trimmed.toLowerCase();
-    
     if (lowerTrimmed.startsWith(prefix + 'ai ')) {
       if (!isGroup) return;
       const question = trimmed.substring(prefix.length + 3);
@@ -209,13 +207,10 @@ async function startSock() {
       return;
     }
 
-    // @meta ai can be anywhere in the message
     if (lowerTrimmed.includes('@meta ai')) {
       if (!isGroup) return;
-      // Extract question after @meta ai
       const index = lowerTrimmed.indexOf('@meta ai');
       let question = trimmed.substring(index + '@meta ai'.length).trim();
-      // Remove leading colon or space
       if (question.startsWith(':')) question = question.substring(1).trim();
       if (question === '') {
         await sock.sendMessage(from, { text: `Usage: \`@meta ai <your question>\`` });
@@ -225,15 +220,14 @@ async function startSock() {
       return;
     }
 
-    if (trimmed.toLowerCase() === prefix + 's' || trimmed.toLowerCase() === prefix + 'sticker') {
+    if (lowerTrimmed === prefix + 's' || lowerTrimmed === prefix + 'sticker') {
       if (!isGroup) return;
       await handleSticker(msg, from);
       return;
     }
 
-    // Owner commands only in private
     if (isOwner && !isGroup) {
-      if (trimmed.toLowerCase() === prefix + 'keys') {
+      if (lowerTrimmed === prefix + 'keys') {
         let status = `🔑 *Groq API Key Status*\n\n`;
         validKeys.forEach((key, idx) => {
           const masked = key.length <= 8 ? key : key.substring(0, 4) + '...' + key.substring(key.length - 4);
@@ -248,7 +242,7 @@ async function startSock() {
         return;
       }
 
-      if (trimmed.toLowerCase() === prefix + 'switch') {
+      if (lowerTrimmed === prefix + 'switch') {
         if (currentKeyIndex >= validKeys.length - 1) {
           await sock.sendMessage(from, { text: '❌ Already using the last API key. No more keys available.' });
           return;
