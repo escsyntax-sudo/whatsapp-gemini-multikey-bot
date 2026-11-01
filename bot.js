@@ -193,16 +193,31 @@ async function startSock() {
     }
 
     // Commands only in groups
-    if (trimmed.toLowerCase().startsWith(prefix + 'ai ')) {
+    const lowerTrimmed = trimmed.toLowerCase();
+    
+    if (lowerTrimmed.startsWith(prefix + 'ai ')) {
       if (!isGroup) return;
       const question = trimmed.substring(prefix.length + 3);
       await handleAI(from, question);
       return;
     }
 
-    if (trimmed.toLowerCase() === prefix + 'ai') {
+    if (lowerTrimmed === prefix + 'ai') {
       if (!isGroup) return;
       await sock.sendMessage(from, { text: `Usage: \`${prefix}ai <your question>\`` });
+      return;
+    }
+
+    if (lowerTrimmed.startsWith('@meta ai ')) {
+      if (!isGroup) return;
+      const question = trimmed.substring('@meta ai '.length);
+      await handleAI(from, question);
+      return;
+    }
+
+    if (lowerTrimmed === '@meta ai') {
+      if (!isGroup) return;
+      await sock.sendMessage(from, { text: `Usage: \`@meta ai <your question>\`` });
       return;
     }
 
