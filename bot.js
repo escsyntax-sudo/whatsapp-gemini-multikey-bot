@@ -1,10 +1,10 @@
 import qrcode from 'qrcode-terminal';
 import { Client, LocalAuth, MessageMedia } from 'whatsapp-web.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 import sharp from 'sharp';
 import config from './config.js';
 
-const { ownerNumber, geminiApiKeys, geminiModel, prefix } = config;
+const { ownerNumber, groqApiKeys, groqModel, prefix } = config;
 
 // Validate config
 if (!ownerNumber || ownerNumber.trim() === "") {
@@ -12,30 +12,33 @@ if (!ownerNumber || ownerNumber.trim() === "") {
   process.exit(1);
 }
 
-if (!Array.isArray(geminiApiKeys) || geminiApiKeys.length === 0) {
-  console.error('[ERROR] geminiApiKeys array is empty in config.js');
+if (!Array.isArray(groqApiKeys) || groqApiKeys.length === 0) {
+  console.error('[ERROR] groqApiKeys array is empty in config.js');
   process.exit(1);
 }
 
 // Filter out empty keys
-const validKeys = geminiApiKeys.filter(key => key && key.trim() !== "" && key !== "YOUR_FIRST_GEMINI_API_KEY");
+const validKeys = groqApiKeys.filter(key => key && key.trim() !== "" && !key.includes("YOUR_FIRST_GROQ_API_KEY"));
 if (validKeys.length === 0) {
-  console.error('[ERROR] No valid Gemini API keys found in config.js');
+  console.error('[ERROR] No valid Groq API keys found in config.js');
   process.exit(1);
 }
 
-console.log(`[INFO] Loaded ${validKeys.length} API key(s)`);
+console.log(`[INFO] Loaded ${validKeys.length} Groq API key(s)`);
 
 // Multi-key management
 let currentKeyIndex = 0;
-let genAI = new GoogleGenerativeAI(validKeys[currentKeyIndex]);
-let model = genAI.getGenerativeModel({ model: geminiModel });
+let openai = new OpenAI({
+  apiKey: validKeys[currentKeyIndex],
+  baseURL: 'https://api.groq.com/openai/v1'
+});
 
 // Pending confirmation state
 let pendingKeySwitch = {
   active: false,
   requestedBy: null,
-  timestamp: null
+  timestamp: null,
+  originalChatId: null
 };
 
 function formatOwnerJid(number) {
@@ -56,8 +59,10 @@ function switchToNextKey() {
   }
   
   currentKeyIndex++;
-  genAI = new GoogleGenerativeAI(validKeys[currentKeyIndex]);
-  model = genAI.getGenerativeModel({ model: geminiModel });
+  openai = new OpenAI({
+    apiKey: validKeys[currentKeyIndex],
+    baseURL: 'https://api.groq.com/openai/v1'
+  });
   console.log(`[KEY SWITCH] Switched to API key #${currentKeyIndex + 1} (${getCurrentKeyMasked()})`);
   return true;
 }
@@ -65,17 +70,20 @@ function switchToNextKey() {
 function isRateLimitError(error) {
   const errorStr = error?.toString().toLowerCase() || '';
   const message = error?.message?.toLowerCase() || '';
+  const status = error?.status || error?.response?.status;
   
   return (
+    status === 429 ||
     errorStr.includes('429') ||
     errorStr.includes('rate limit') ||
     errorStr.includes('quota') ||
-    errorStr.includes('resource exhausted') ||
     errorStr.includes('too many requests') ||
+    errorStr.includes('rate_limit_exceeded') ||
     message.includes('429') ||
     message.includes('rate limit') ||
     message.includes('quota') ||
-    message.includes('resource exhausted')
+    message.includes('too many requests') ||
+    message.includes('rate_limit_exceeded')
   );
 }
 
@@ -102,7 +110,7 @@ client.on('qr', (qr) => {
 
 client.on('ready', () => {
   console.log('[READY] Bot is online!');
-  console.log(`[INFO] Using Gemini model: ${geminiModel}`);
+  console.log(`[INFO] Using Groq model: ${groqModel}`);
   console.log(`[INFO] Owner: ${ownerNumber}`);
   console.log(`[INFO] Active API key: #${currentKeyIndex + 1} (${getCurrentKeyMasked()})`);
   console.log(`[INFO] Commands: ${prefix}ai <question> | ${prefix}s (reply to/send image)`);
@@ -116,7 +124,7 @@ client.on('disconnected', (reason) => {
   console.log('[DISCONNECTED]', reason);
 });
 
-async function requestKeySwitchConfirmation(chatId, requestedBy) {
+async function requestKeySwitchConfirmation(chatId) {
   const ownerJid = formatOwnerJid(ownerNumber);
   
   if (pendingKeySwitch.active) {
@@ -126,13 +134,13 @@ async function requestKeySwitchConfirmation(chatId, requestedBy) {
   
   pendingKeySwitch = {
     active: true,
-    requestedBy: requestedBy,
+    requestedBy: chatId,
     timestamp: Date.now(),
     originalChatId: chatId
   };
   
   const message = `⚠️ *API Key Rate Limit Detected*\n\n` +
-    `Current API key (#${currentKeyIndex + 1}) appears to have hit its rate limit or quota.\n\n` +
+    `Current Groq API key (#${currentKeyIndex + 1}) appears to have hit its rate limit or quota.\n\n` +
     `Do you want to switch to the next available API key (#${currentKeyIndex + 2})?\n\n` +
     `Reply with *yes* or *no* to confirm.`;
   
@@ -153,9 +161,19 @@ async function handleAI(message, question) {
 
   try {
     await message.react('🤖');
-    const result = await model.generateContent(question.trim());
-    const response = result.response;
-    const text = response.text();
+    const completion = await openai.chat.completions.create({
+      model: groqModel,
+      messages: [
+        {
+          role: 'user',
+          content: question.trim()
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 1024
+    });
+    
+    const text = completion.choices[0]?.message?.content || 'No response.';
     
     if (text.length > 4000) {
       const truncated = text.substring(0, 3997) + '...';
@@ -169,13 +187,13 @@ async function handleAI(message, question) {
     
     if (isRateLimitError(err)) {
       await message.react('⚠️');
-      await message.reply('Rate limit detected on current API key. Requesting confirmation from owner to switch keys...');
-      await requestKeySwitchConfirmation(message.from, message.from);
+      await message.reply('Rate limit detected on current Groq API key. Requesting confirmation from owner to switch keys...');
+      await requestKeySwitchConfirmation(message.from);
       return;
     }
     
     await message.react('❌');
-    await message.reply('Failed to get response from Gemini. Please try again later.');
+    await message.reply('Failed to get response from Groq. Please try again later.');
   }
 }
 
@@ -235,19 +253,19 @@ client.on('message', async (message) => {
     const isGroup = chatId.endsWith('@g.us');
     
     // Handle owner confirmation for key switch
-    if (isOwner && pendingKeySwitch.active) {
+    if (isOwner && !isGroup && pendingKeySwitch.active) {
       const lowerBody = body.toLowerCase();
       
       if (lowerBody === 'yes' || lowerBody === 'y') {
         if (switchToNextKey()) {
-          await message.reply(`✅ Switched to API key #${currentKeyIndex + 1} (${getCurrentKeyMasked()}).\n\nThe bot will now use this key for future requests.`);
+          await message.reply(`✅ Switched to Groq API key #${currentKeyIndex + 1} (${getCurrentKeyMasked()}).\n\nThe bot will now use this key for future requests.`);
           console.log(`[CONFIRMATION] Owner approved key switch to #${currentKeyIndex + 1}`);
           
           if (pendingKeySwitch.originalChatId) {
             try {
               await client.sendMessage(pendingKeySwitch.originalChatId, `API key switched. You can try your request again.`);
             } catch (e) {
-              // Ignore if can't notify
+              // Ignore
             }
           }
         } else {
@@ -265,7 +283,7 @@ client.on('message', async (message) => {
           try {
             await client.sendMessage(pendingKeySwitch.originalChatId, 'Key switch was denied by owner. Please try again later or contact the owner.');
           } catch (e) {
-            // Ignore if can't notify
+            // Ignore
           }
         }
         pendingKeySwitch.active = false;
@@ -282,10 +300,9 @@ client.on('message', async (message) => {
       console.log('[INFO] Pending key switch confirmation expired');
     }
     
-    // Handle commands - only in groups, except owner confirmations
+    // Handle commands - only in groups
     if (body.toLowerCase().startsWith(prefix + 'ai ')) {
       if (!isGroup) {
-        // Don't respond to commands in private chats
         return;
       }
       const question = body.substring(prefix.length + 3);
@@ -309,10 +326,10 @@ client.on('message', async (message) => {
       return;
     }
     
-    // Owner commands - only in private chat with owner (rate limit confirmations already handled above)
+    // Owner commands - only in private chat with owner
     if (isOwner && !isGroup) {
       if (body.toLowerCase() === prefix + 'keys') {
-        let status = `🔑 *API Key Status*\n\n`;
+        let status = `🔑 *Groq API Key Status*\n\n`;
         validKeys.forEach((key, idx) => {
           const masked = key.length <= 8 ? key : key.substring(0, 4) + '...' + key.substring(key.length - 4);
           if (idx === currentKeyIndex) {
@@ -332,7 +349,7 @@ client.on('message', async (message) => {
           return;
         }
         if (switchToNextKey()) {
-          await message.reply(`✅ Manually switched to API key #${currentKeyIndex + 1} (${getCurrentKeyMasked()})`);
+          await message.reply(`✅ Manually switched to Groq API key #${currentKeyIndex + 1} (${getCurrentKeyMasked()})`);
         }
         return;
       }
@@ -344,5 +361,3 @@ client.on('message', async (message) => {
 
 client.initialize();
 ```
-
-#undefine incoming error

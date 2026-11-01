@@ -1,7 +1,7 @@
 {
-  "name": "whatsapp-gemini-multikey-bot",
+  "name": "whatsapp-groq-multikey-bot",
   "version": "1.0.0",
-  "description": "WhatsApp bot with Gemini AI multi-key rotation and sticker creator for Pterodactyl",
+  "description": "WhatsApp bot with Groq AI multi-key rotation and sticker creator for Pterodactyl",
   "main": "bot.js",
   "type": "module",
   "engines": {
@@ -11,7 +11,7 @@
     "start": "node bot.js"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
+    "openai": "^4.73.0",
     "mime-types": "^2.1.35",
     "qrcode-terminal": "^0.12.0",
     "sharp": "^0.33.5",
