@@ -1,6 +1,7 @@
 import qrcode from 'qrcode-terminal';
-import pkg from '@whiskeysockets/baileys';
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage, jidNormalizedUser } = pkg;
+import Baileys from '@whiskeysockets/baileys';
+const makeWASocket = Baileys.default || Baileys;
+const { useMultiFileAuthState, DisconnectReason, downloadMediaMessage, jidNormalizedUser } = Baileys;
 import { Boom } from '@hapi/boom';
 import sharp from 'sharp';
 import pino from 'pino';
