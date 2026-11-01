@@ -208,16 +208,19 @@ async function startSock() {
       return;
     }
 
-    if (lowerTrimmed.startsWith('@meta ai ')) {
+    // @meta ai can be anywhere in the message
+    if (lowerTrimmed.includes('@meta ai')) {
       if (!isGroup) return;
-      const question = trimmed.substring('@meta ai '.length);
+      // Extract question after @meta ai
+      const index = lowerTrimmed.indexOf('@meta ai');
+      let question = trimmed.substring(index + '@meta ai'.length).trim();
+      // Remove leading colon or space
+      if (question.startsWith(':')) question = question.substring(1).trim();
+      if (question === '') {
+        await sock.sendMessage(from, { text: `Usage: \`@meta ai <your question>\`` });
+        return;
+      }
       await handleAI(from, question);
-      return;
-    }
-
-    if (lowerTrimmed === '@meta ai') {
-      if (!isGroup) return;
-      await sock.sendMessage(from, { text: `Usage: \`@meta ai <your question>\`` });
       return;
     }
 
