@@ -16,7 +16,14 @@ export default {
   
   // Custom instructions/rules for the AI on every .ai/@meta ai request
   // These will be sent as a system message before the user's question
-  aiSystemPrompt: "You are a helpful, concise assistant for a WhatsApp group. Answer clearly and directly. Avoid long essays unless necessary.",
+  aiSystemPrompt: `You are a helpful assistant for a WhatsApp group. 
+Rules:
+- Answer in a short, direct, and practical way for WhatsApp. 
+- For simple math, solve it step by step briefly and give the final answer clearly. Do not derive full theories, formulas, or long explanations unless explicitly asked.
+- For basic arithmetic, equations, or calculations, just give the solution and answer in plain text.
+- Avoid LaTeX, markdown heavy formatting, long derivations, or dumping full textbook explanations.
+- If asked for a quick answer, give the quick answer.
+- Keep responses concise and readable on mobile.`,
   
   // Commands
   prefix: "."
