@@ -232,6 +232,7 @@ client.on('message', async (message) => {
     const chatId = message.from;
     const ownerJid = formatOwnerJid(ownerNumber);
     const isOwner = chatId === ownerJid;
+    const isGroup = chatId.endsWith('@g.us');
     
     // Handle owner confirmation for key switch
     if (isOwner && pendingKeySwitch.active) {
@@ -281,25 +282,35 @@ client.on('message', async (message) => {
       console.log('[INFO] Pending key switch confirmation expired');
     }
     
-    // Handle commands
+    // Handle commands - only in groups, except owner confirmations
     if (body.toLowerCase().startsWith(prefix + 'ai ')) {
+      if (!isGroup) {
+        // Don't respond to commands in private chats
+        return;
+      }
       const question = body.substring(prefix.length + 3);
       await handleAI(message, question);
       return;
     }
     
     if (body.toLowerCase() === prefix + 'ai') {
+      if (!isGroup) {
+        return;
+      }
       await message.reply(`Usage: \`${prefix}ai <your question>\``);
       return;
     }
     
     if (body.toLowerCase() === prefix + 's' || body.toLowerCase() === prefix + 'sticker') {
+      if (!isGroup) {
+        return;
+      }
       await handleSticker(message);
       return;
     }
     
-    // Owner commands
-    if (isOwner) {
+    // Owner commands - only in private chat with owner (rate limit confirmations already handled above)
+    if (isOwner && !isGroup) {
       if (body.toLowerCase() === prefix + 'keys') {
         let status = `🔑 *API Key Status*\n\n`;
         validKeys.forEach((key, idx) => {
