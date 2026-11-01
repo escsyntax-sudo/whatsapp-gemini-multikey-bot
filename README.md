@@ -20,7 +20,10 @@ A Node.js v22 WhatsApp bot with Google Gemini AI, automatic API key rotation on 
 ## Setup for Pterodactyl
 
 1. Upload all files to your server (via SFTP or file manager)
-2. Edit `config.js` with your details:
+2. Copy `config.example.js` to `config.js` and edit it with your details:
+   ```bash
+   cp config.example.js config.js
+   ```
    - `ownerNumber`: Your WhatsApp number with country code (digits only, no + or spaces)
    - `geminiApiKeys`: Array of your Gemini API keys
    - `geminiModel`: Model to use (default: `gemini-1.5-flash`)
